@@ -4,7 +4,7 @@ A single-page tester for layered, greyscale, pivot-rigged paperdoll sprites.
 
 **Live viewer:** https://sh0tybumbati.github.io/paperdoll-viewer/
 
-- Pick a doll (boar, bull, deer, rabbit, wolf) or drop any rigged `.svg` onto the page.
+- Pick a doll (boar, bull, deer, man, rabbit, wolf) or drop any rigged `.svg` onto the page.
 - Idle, walk, trot and run cycles, plus a Pose mode with a slider for every joint.
 - Mirror, tint test (recolour the greyscale), pivot display and a scrolling ground.
 - Keys: `space` pause, `.` step, `1`-`5` animations.
