@@ -15,5 +15,10 @@ The joint hierarchy is read from the paired pivot markers in each SVG, so no ext
 
 - `index.html`: the viewer (self-contained, the approved dolls are embedded).
 - `dolls/`: the approved dolls as SVG, each with its `*.hierarchy.json`.
+- `skill/paperdoll-sprite/`: the Claude Code skill that builds these dolls: `SKILL.md` (the rules and workflow), `scripts/` (tracing, validation, pose and viewer tools) and `references/` (the worked examples and their `build_*.py` generators).
+
+### Using the build scripts
+
+The generators in `skill/paperdoll-sprite/references/` read their reference drawings from `references/sources/`. Those reference images (AI-generated art the dolls were traced from) are not published in this repo, so the `build_*.py` scripts will not run until you put the images back there (`boar_flip.png`, `stag_flip.png`, `wolf_flip.png`, `bull_flip.png`, `rabbit_flip.png`, `man_flip.png`: the originals, mirrored to face left). The finished dolls in `dolls/` and the viewer do not need them.
 
 No licence has been chosen yet, so all rights are reserved until one is added.

@@ -1,0 +1,79 @@
+{
+ "pivots": {
+  "leg-fr-u": {
+   "parent": "body",
+   "x": 32.7,
+   "y": 23.5
+  },
+  "leg-fr-l": {
+   "parent": "leg-fr-u",
+   "x": 32.65,
+   "y": 41.0
+  },
+  "leg-fl-u": {
+   "parent": "body",
+   "x": 32.7,
+   "y": 23.5
+  },
+  "leg-fl-l": {
+   "parent": "leg-fl-u",
+   "x": 32.65,
+   "y": 41.0
+  },
+  "leg-br-u": {
+   "parent": "body",
+   "x": 60.8,
+   "y": 22.5
+  },
+  "leg-br-l": {
+   "parent": "leg-br-u",
+   "x": 65.21,
+   "y": 40.5
+  },
+  "leg-bl-u": {
+   "parent": "body",
+   "x": 60.8,
+   "y": 22.5
+  },
+  "leg-bl-l": {
+   "parent": "leg-bl-u",
+   "x": 65.21,
+   "y": 40.5
+  },
+  "tail": {
+   "parent": "body",
+   "x": 66.5,
+   "y": 14.3
+  },
+  "neck": {
+   "parent": "body",
+   "x": 37.0,
+   "y": 18.0
+  },
+  "ear-r": {
+   "parent": "head",
+   "x": 8.0,
+   "y": 15.2
+  },
+  "horn-r": {
+   "parent": "head",
+   "x": 12.4,
+   "y": 11.8
+  },
+  "head": {
+   "parent": "neck",
+   "x": 20.5,
+   "y": 17.5
+  },
+  "ear-l": {
+   "parent": "head",
+   "x": 19.5,
+   "y": 15.3
+  },
+  "horn-l": {
+   "parent": "head",
+   "x": 19.5,
+   "y": 11.5
+  }
+ }
+}

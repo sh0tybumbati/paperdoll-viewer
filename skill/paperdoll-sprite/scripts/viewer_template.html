@@ -1,0 +1,344 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Doll Viewer</title>
+<style>
+  :root { --bg:#1d2024; --panel:#262a2f; --line:#3a4047; --fg:#e6e8ea; --dim:#9aa3ab; --acc:#e8b04a; }
+  * { box-sizing: border-box; }
+  html, body { height:100%; margin:0; background:var(--bg); color:var(--fg); font:13px/1.4 system-ui, sans-serif; }
+  #app { display:grid; grid-template-columns: 1fr 300px; height:100%; }
+  #stagewrap { position:relative; overflow:hidden; background:var(--stagebg, #8fa48a); }
+  #stage { position:absolute; inset:0; width:100%; height:100%; }
+  #drop { position:absolute; inset:0; display:none; align-items:center; justify-content:center; font-size:20px;
+          background:rgba(0,0,0,.55); color:#fff; pointer-events:none; }
+  #hint { position:absolute; left:12px; bottom:10px; color:rgba(0,0,0,.55); font-size:12px; pointer-events:none; }
+  #side { background:var(--panel); border-left:1px solid var(--line); overflow:auto; padding:12px 14px 24px; }
+  h1 { font-size:14px; margin:0 0 8px; letter-spacing:.02em; }
+  h2 { font-size:11px; text-transform:uppercase; letter-spacing:.08em; color:var(--dim); margin:16px 0 6px; font-weight:600; }
+  .row { display:flex; align-items:center; gap:8px; margin:5px 0; }
+  .row label { flex:0 0 72px; color:var(--dim); }
+  .row input[type=range] { flex:1; min-width:0; }
+  .row output { flex:0 0 40px; text-align:right; color:var(--dim); font-variant-numeric:tabular-nums; }
+  button, select { background:#31363c; color:var(--fg); border:1px solid var(--line); border-radius:6px; padding:5px 9px; font:inherit; cursor:pointer; }
+  button:hover, select:hover { border-color:#5b646d; }
+  button.on { background:var(--acc); color:#1b1b1b; border-color:var(--acc); }
+  .btns { display:flex; flex-wrap:wrap; gap:6px; }
+  .check { display:flex; align-items:center; gap:7px; margin:4px 0; cursor:pointer; }
+  input[type=color] { width:34px; height:24px; padding:0; border:1px solid var(--line); border-radius:4px; background:none; }
+  #joints .row label { flex-basis:92px; font-size:12px; }
+  #info { color:var(--dim); font-size:12px; white-space:pre-wrap; margin-top:6px; }
+  #warn { color:#ff9b8a; font-size:12px; white-space:pre-wrap; }
+  kbd { background:#31363c; border:1px solid var(--line); border-radius:4px; padding:0 4px; font-size:11px; }
+</style>
+</head>
+<body>
+<div id="app">
+  <div id="stagewrap">
+    <svg id="stage" xmlns="http://www.w3.org/2000/svg" preserveAspectRatio="xMidYMid meet"></svg>
+    <div id="drop">Drop a doll .svg here</div>
+    <div id="hint">drop an .svg anywhere · <kbd>space</kbd> pause · <kbd>.</kbd> step · <kbd>1</kbd>–<kbd>5</kbd> animations</div>
+  </div>
+  <div id="side">
+    <h1 id="title">Doll Viewer</h1>
+    <div class="btns">
+      <button id="open">Open .svg…</button>
+      <span id="samples" class="btns"></span>
+      <input id="file" type="file" accept=".svg,image/svg+xml" hidden>
+    </div>
+    <div id="info"></div><div id="warn"></div>
+
+    <h2>Animation</h2>
+    <div class="btns" id="anims"></div>
+    <div class="row"><label>Speed</label><input id="speed" type="range" min="0.1" max="3" step="0.05" value="1"><output id="speedO">1.0×</output></div>
+    <div class="row"><label>Amplitude</label><input id="amp" type="range" min="0" max="1.6" step="0.05" value="1"><output id="ampO">1.0×</output></div>
+    <div class="btns"><button id="pause">Pause</button><button id="step">Step</button><button id="reset">Reset pose</button></div>
+
+    <h2>View</h2>
+    <label class="check"><input id="flip" type="checkbox"> Face right (mirror)</label>
+    <label class="check"><input id="ground" type="checkbox" checked> Ground / scroll</label>
+    <label class="check"><input id="pivots" type="checkbox"> Show pivots</label>
+    <label class="check"><input id="tintOn" type="checkbox"> Tint test <input id="tint" type="color" value="#c4894f"></label>
+    <div class="row"><label>Background</label><input id="bg" type="color" value="#8fa48a"></div>
+    <div class="row"><label>Zoom</label><input id="zoom" type="range" min="0.5" max="2" step="0.05" value="1"><output id="zoomO">1.0×</output></div>
+
+    <h2>Joints <span style="text-transform:none;letter-spacing:0;color:var(--dim)">(live; drag in Pose mode)</span></h2>
+    <div id="joints"></div>
+  </div>
+</div>
+
+<script>
+const SAMPLES = /*SAMPLES*/{};
+const NS = 'http://www.w3.org/2000/svg', INK = 'inkscape:';
+const $ = s => document.querySelector(s);
+const stage = $('#stage');
+const state = { anim:'walk', speed:1, amp:1, paused:false, t:0, doll:null, manual:{}, flip:false, ground:true, zoom:1 };
+
+/* ---------- animation definitions (degrees; +angle = clockwise; art faces left so + swings a foot forward) ---------- */
+const ANIMS = {
+  idle: { label:'Idle', f:0.25 },
+  walk: { label:'Walk', bip:{legA:26, knee:34, armA:22, elbow:20}, f:0.9,  legA:24, legL:30, bob:0.012, neck:3,  head:2.5, tail:7,  gait:{bl:0,    fl:.25, br:.5,  fr:.75}, pitch:0.8 },
+  trot: { label:'Trot', bip:{legA:36, knee:55, armA:34, elbow:45}, f:1.6,  legA:30, legL:42, bob:0.018, neck:2,  head:2,   tail:8,  gait:{bl:0,    fl:.5,  br:.5,  fr:0},   pitch:0.6 },
+  run:  { label:'Run',  bip:{legA:50, knee:85, armA:48, elbow:80}, f:2.4,  legA:46, legL:62, bob:0.032, neck:6,  head:5,   tail:12, gait:{bl:0,    fl:.46, br:.1,  fr:.56}, pitch:4 },
+  pose: { label:'Pose', f:0 },
+};
+const ORDER = ['idle','walk','trot','run','pose'];
+
+const LEG = /^leg-([fb])([lr])-([ul])$/;           // quadruped limbs: leg-fl-u ...
+const BIP = /^(leg|arm)-([lr])-([ul])$/;            // biped limbs: leg-l-u, arm-r-l ...
+function animPose(kind, t, doll) {
+  const c = ANIMS[kind], A = state.amp, out = {}, root = { dx:0, dy:0, rot:0 };
+  const H = doll.vb.h, W2 = 2 * Math.PI;
+  const set = (n, a) => { if (doll.layers[n]) out[n] = (out[n] || 0) + a * A; };
+  if (kind === 'pose') return { ang: {...state.manual}, root, speed: 0 };
+  if (kind === 'idle') {
+    const b = Math.sin(W2 * t * c.f);
+    root.dy = -0.003 * H * b * A;
+    set('neck', 1.6 * Math.sin(W2 * t * c.f + 0.6)); set('head', 1.8 * Math.sin(W2 * t * c.f * 0.7 + 1.9));
+    set('tail', 5 * Math.sin(W2 * t * c.f * 0.8 + 1.0));
+    set('arm-l-u', 2.0 * Math.sin(W2 * t * c.f + 0.4)); set('arm-r-u', 2.0 * Math.sin(W2 * t * c.f + 0.4)); set('arm-l-l', 3 + 1.5 * b); set('arm-r-l', 3 + 1.5 * b);
+    const flick = Math.pow(Math.max(0, Math.sin(W2 * t * 0.17)), 14);
+    set('ear-l', -9 * flick); set('ear-r', 6 * Math.pow(Math.max(0, Math.sin(W2 * t * 0.13 + 2)), 14));
+    return { ang: out, root, speed: 0 };
+  }
+  const ph = t * c.f;
+  for (const n of Object.keys(doll.layers)) {
+    const m = LEG.exec(n); if (!m) continue;
+    const th = W2 * (ph + c.gait[m[1] + m[2]]);
+    if (m[3] === 'u') set(n, c.legA * Math.sin(th));
+    else set(n, -c.legL * Math.pow(Math.max(0, Math.cos(th)), 1.3));
+  }
+  for (const n of Object.keys(doll.layers)) {
+    const m = BIP.exec(n); if (!m || !c.bip) continue;
+    const bp = c.bip, th = W2 * (ph + (m[2] === 'l' ? 0 : 0.5) + (m[1] === 'arm' ? 0.5 : 0));   // arms swing against the same-side leg
+    if (m[1] === 'leg') set(n, m[3] === 'u' ? bp.legA * Math.sin(th) : -bp.knee * Math.pow(Math.max(0, Math.cos(th)), 1.3));
+    else set(n, m[3] === 'u' ? bp.armA * Math.sin(th) : bp.elbow * (0.5 + 0.5 * Math.sin(th + 0.5)));
+  }
+  set('neck', c.neck * Math.sin(W2 * ph + Math.PI)); set('head', c.head * Math.sin(W2 * ph + Math.PI + 0.7) - 0.4 * c.neck * Math.sin(W2 * ph + Math.PI));
+  set('tail', c.tail * Math.sin(W2 * ph + 1.2));
+  set('ear-l', 3 * Math.sin(W2 * ph * 2 + 1)); set('ear-r', 3 * Math.sin(W2 * ph * 2 + 1.4));
+  root.dy = -c.bob * H * Math.abs(Math.sin(W2 * ph * (kind === 'run' ? 1 : 2) / (kind === 'run' ? 1 : 1) * (kind === 'run' ? 1 : 1))) * A;
+  root.rot = c.pitch * Math.sin(W2 * ph + 0.8) * A;
+  // ground speed that roughly cancels foot skate: stance foot moves 2*A*L per half cycle
+  const L = doll.legLen || 0.3 * H;
+  const speed = 4 * (c.legA * A * Math.PI / 180) * L * c.f;
+  return { ang: out, root, speed };
+}
+
+/* ---------- load + rig ---------- */
+function ancestors(doll, n) { const r = []; while (n) { r.unshift(n); n = doll.layers[n].parent; } return r; }
+
+function loadSvg(text, name) {
+  const warn = [];
+  const xml = new DOMParser().parseFromString(text, 'image/svg+xml');
+  const src = xml.documentElement;
+  if (src.localName !== 'svg') { $('#warn').textContent = 'Not an SVG: ' + name; return; }
+  stage.replaceChildren();
+  const vbA = (src.getAttribute('viewBox') || '0 0 64 64').split(/[\s,]+/).map(Number);
+  const vb = { x:vbA[0], y:vbA[1], w:vbA[2], h:vbA[3] };
+  const defs = document.createElementNS(NS, 'defs');
+  defs.innerHTML = '<filter id="tintf" color-interpolation-filters="sRGB" x="-5%" y="-5%" width="110%" height="110%"><feColorMatrix id="tintm" type="matrix" values="1 0 0 0 0  0 1 0 0 0  0 0 1 0 0  0 0 0 1 0"/></filter>';
+  stage.appendChild(defs);
+  const world = document.createElementNS(NS, 'g'); world.id = 'world'; stage.appendChild(world);
+  const floor = document.createElementNS(NS, 'g'); world.appendChild(floor);
+  const flipG = document.createElementNS(NS, 'g'); world.appendChild(flipG);
+  const dollG = document.createElementNS(NS, 'g'); dollG.id = 'doll'; flipG.appendChild(dollG);
+  for (const ch of [...src.childNodes]) {
+    if (ch.nodeType !== 1) continue;
+    const tag = ch.localName;
+    if (tag === 'namedview' || tag === 'metadata' || tag === 'title') continue;
+    if (tag === 'defs') { for (const d of [...ch.childNodes]) defs.appendChild(document.importNode(d, true)); continue; }
+    dollG.appendChild(document.importNode(ch, true));
+  }
+  // layers + pivots
+  const layers = {};
+  for (const g of dollG.children) {
+    if (g.getAttribute(INK + 'groupmode') !== 'layer') continue;
+    const n = g.getAttribute(INK + 'label'); if (!n) continue;
+    const piv = {};
+    for (const e of g.querySelectorAll('ellipse, circle')) {
+      const l = e.getAttribute(INK + 'label') || '';
+      if (l.endsWith('-pivot')) piv[l.slice(0, -6)] = { x:+e.getAttribute('cx'), y:+e.getAttribute('cy'), el:e };
+    }
+    layers[n] = { el:g, name:n, pivots:piv, parent:null, children:[], pivot:null };
+  }
+  const doll = { layers, vb, dollG, flipG, floor, world, name };
+  // hierarchy from paired pivots: mutual pairs form an undirected graph; orient it away from the root
+  const adj = {};
+  for (const n in layers) for (const p in layers[n].pivots) {
+    const P = layers[p]; if (!P || p === n) continue;
+    const mate = P.pivots[n], mine = layers[n].pivots[p];
+    if (mate && Math.hypot(mate.x - mine.x, mate.y - mine.y) < 0.4) (adj[n] = adj[n] || {})[p] = true;
+  }
+  const pref = ['body', 'torso', 'pelvis', 'hips', 'trunk', 'root'];
+  const linked = Object.keys(adj);
+  doll.root = pref.find(n => adj[n]) || linked.sort((a, b) => Object.keys(adj[b]).length - Object.keys(adj[a]).length)[0] || Object.keys(layers)[0];
+  const seen = new Set([doll.root]), queue = [doll.root];
+  while (queue.length) {
+    const cur = queue.shift();
+    for (const nb of Object.keys(adj[cur] || {})) {
+      if (seen.has(nb)) continue;
+      seen.add(nb); layers[nb].parent = cur; layers[cur].children.push(nb);
+      const mp = layers[nb].pivots[cur]; layers[nb].pivot = { x:mp.x, y:mp.y }; queue.push(nb);
+    }
+  }
+  // root pivot: centre of root layer
+  const rb = layers[doll.root].el.getBBox();
+  layers[doll.root].pivot = { x:rb.x + rb.width / 2, y:rb.y + rb.height / 2 };
+  // ground + leg length
+  let gy = -Infinity;
+  for (const n in layers) if (/^leg-.*-l$/.test(n)) { const b = layers[n].el.getBBox(); gy = Math.max(gy, b.y + b.height); }
+  if (!isFinite(gy)) { const b = dollG.getBBox(); gy = b.y + b.height * 0.92; }
+  doll.groundY = gy;
+  const lu = layers['leg-fl-u'] || layers['leg-bl-u'] || layers['leg-l-u'];
+  if (lu && lu.pivot) doll.legLen = gy - lu.pivot.y;
+  const unrigged = Object.keys(layers).filter(n => n !== doll.root && !layers[n].parent && !/shadow/.test(n));
+  if (unrigged.length) warn.push('no rig link (static): ' + unrigged.join(', '));
+  state.doll = doll; state.manual = {};
+  fit(); buildJoints(); applyView();
+  $('#title').textContent = name || 'Doll';
+  $('#info').textContent = Object.keys(layers).length + ' layers · root "' + doll.root + '" · canvas ' + vb.w + '×' + vb.h + (doll.legLen ? ' · leg ' + doll.legLen.toFixed(1) : '');
+  $('#warn').textContent = warn.join('\n');
+}
+
+function fit() {
+  const d = state.doll; if (!d) return;
+  const z = state.zoom, padX = d.vb.w * 0.35, padY = d.vb.h * 0.12;
+  const w = (d.vb.w + 2 * padX) / z, h = (d.vb.h + 2 * padY) / z;
+  const cx = d.vb.x + d.vb.w / 2, cy = d.vb.y + d.vb.h / 2;
+  stage.setAttribute('viewBox', [cx - w / 2, cy - h / 2, w, h].join(' '));
+  buildFloor();
+}
+
+function buildFloor() {
+  const d = state.doll; if (!d) return;
+  d.floor.replaceChildren();
+  if (!state.ground) return;
+  const vbA = stage.getAttribute('viewBox').split(' ').map(Number);
+  const y = d.groundY;
+  const line = document.createElementNS(NS, 'rect');
+  line.setAttribute('x', vbA[0] - 5); line.setAttribute('y', y); line.setAttribute('width', vbA[2] + 10); line.setAttribute('height', vbA[1] + vbA[3] - y + 5);
+  line.setAttribute('fill', 'rgba(0,0,0,.14)'); d.floor.appendChild(line);
+  const edge = document.createElementNS(NS, 'line');
+  edge.setAttribute('x1', vbA[0] - 5); edge.setAttribute('x2', vbA[0] + vbA[2] + 5); edge.setAttribute('y1', y); edge.setAttribute('y2', y);
+  edge.setAttribute('stroke', 'rgba(0,0,0,.35)'); edge.setAttribute('stroke-width', d.vb.h * 0.004); d.floor.appendChild(edge);
+  const marks = document.createElementNS(NS, 'g'); marks.id = 'marks'; d.floor.appendChild(marks);
+  d.spacing = d.vb.w * 0.12;
+  const n = Math.ceil(vbA[2] / d.spacing) + 3;
+  for (let i = 0; i < n; i++) {
+    const m = document.createElementNS(NS, 'rect');
+    m.setAttribute('x', vbA[0] + i * d.spacing - d.spacing); m.setAttribute('y', y + d.vb.h * 0.035);
+    m.setAttribute('width', d.spacing * 0.35); m.setAttribute('height', d.vb.h * 0.012); m.setAttribute('fill', 'rgba(0,0,0,.28)');
+    marks.appendChild(m);
+  }
+  d.marks = marks; d.markBase = vbA[0];
+}
+
+function buildJoints() {
+  const d = state.doll, box = $('#joints'); box.replaceChildren();
+  d.joints = {};
+  const names = Object.keys(d.layers).filter(n => d.layers[n].parent || n === d.root);
+  for (const n of names) {
+    const row = document.createElement('div'); row.className = 'row';
+    row.innerHTML = '<label>' + n + '</label><input type="range" min="-90" max="90" step="1" value="0"><output>0°</output>';
+    const inp = row.querySelector('input'), out = row.querySelector('output');
+    inp.addEventListener('input', () => { state.manual[n] = +inp.value; if (state.anim !== 'pose') setAnim('pose'); });
+    d.joints[n] = { inp, out }; box.appendChild(row);
+  }
+}
+
+function applyView() {
+  const d = state.doll; if (!d) return;
+  d.flipG.setAttribute('transform', state.flip ? 'translate(' + (2 * d.vb.x + d.vb.w) + ' 0) scale(-1 1)' : '');
+  for (const n in d.layers) for (const p in d.layers[n].pivots) d.layers[n].pivots[p].el.style.display = $('#pivots').checked ? 'inline' : 'none';
+  const on = $('#tintOn').checked, hex = $('#tint').value;
+  const r = parseInt(hex.slice(1, 3), 16) / 255, g = parseInt(hex.slice(3, 5), 16) / 255, b = parseInt(hex.slice(5, 7), 16) / 255;
+  const k = 1.35;  // greys top out near 0.86; lift so a white tint stays readable
+  $('#tintm') && $('#tintm').setAttribute('values', on ? [r * k, 0, 0, 0, 0, 0, g * k, 0, 0, 0, 0, 0, b * k, 0, 0, 0, 0, 0, 1, 0].join(' ') : '1 0 0 0 0 0 1 0 0 0 0 0 1 0 0 0 0 0 1 0');
+  for (const n in d.layers) if (n !== 'shadow') d.layers[n].el.setAttribute('filter', on ? 'url(#tintf)' : '');
+  stageWrap.style.setProperty('--stagebg', $('#bg').value);
+}
+const stageWrap = $('#stagewrap');
+
+/* ---------- frame ---------- */
+function frame(dt) {
+  const d = state.doll; if (!d) return;
+  if (!state.paused) state.t += dt * state.speed;
+  const P = animPose(state.anim, state.t, d);
+  for (const n in d.layers) {
+    const chain = ancestors(d, n), parts = [];
+    if (P.root.dx || P.root.dy) parts.push('translate(' + P.root.dx + ' ' + P.root.dy + ')');
+    for (const a of chain) {
+      const L = d.layers[a], ang = a === d.root ? P.root.rot + (P.ang[a] || 0) : (P.ang[a] || 0);
+      if (ang && L.pivot) parts.push('rotate(' + ang.toFixed(3) + ' ' + L.pivot.x + ' ' + L.pivot.y + ')');
+    }
+    if (n === 'shadow') { d.layers[n].el.removeAttribute('transform'); continue; }
+    if (parts.length) d.layers[n].el.setAttribute('transform', parts.join(' ')); else d.layers[n].el.removeAttribute('transform');
+  }
+  for (const n in d.joints) {
+    const v = n === d.root ? (P.root.rot + (P.ang[n] || 0)) : (P.ang[n] || 0);
+    d.joints[n].out.textContent = Math.round(v) + '°';
+    if (state.anim !== 'pose' || document.activeElement !== d.joints[n].inp) d.joints[n].inp.value = Math.max(-90, Math.min(90, v));
+  }
+  if (d.marks && state.ground) {
+    const dir = state.flip ? -1 : 1;
+    d.scroll = ((d.scroll || 0) + (state.paused ? 0 : P.speed * dt * state.speed * dir)) % d.spacing;
+    d.marks.setAttribute('transform', 'translate(' + (d.scroll < 0 ? d.scroll + d.spacing : d.scroll) + ' 0)');
+  }
+}
+
+let last = performance.now();
+function tick(now) { const dt = Math.min(0.05, (now - last) / 1000); last = now; frame(dt); requestAnimationFrame(tick); }
+
+/* ---------- UI ---------- */
+function setAnim(k) {
+  state.anim = k;
+  document.querySelectorAll('#anims button').forEach(b => b.classList.toggle('on', b.dataset.k === k));
+}
+ORDER.forEach((k, i) => {
+  const b = document.createElement('button'); b.textContent = ANIMS[k].label; b.dataset.k = k;
+  b.addEventListener('click', () => { if (k === 'pose' && state.doll) { /* start from current pose */ } setAnim(k); });
+  $('#anims').appendChild(b);
+});
+Object.keys(SAMPLES).forEach(n => {
+  const b = document.createElement('button'); b.textContent = n; b.addEventListener('click', () => loadSvg(SAMPLES[n], n));
+  $('#samples').appendChild(b);
+});
+const bind = (id, fn, out) => { const el = $('#' + id); const h = () => { fn(el); if (out) $('#' + out).textContent = (+el.value).toFixed(1) + '×'; }; el.addEventListener('input', h); h(); };
+bind('speed', e => state.speed = +e.value, 'speedO');
+bind('amp', e => state.amp = +e.value, 'ampO');
+bind('zoom', e => { state.zoom = +e.value; fit(); }, 'zoomO');
+$('#flip').addEventListener('change', e => { state.flip = e.target.checked; applyView(); });
+$('#ground').addEventListener('change', e => { state.ground = e.target.checked; buildFloor(); });
+['pivots', 'tintOn', 'tint', 'bg'].forEach(id => $('#' + id).addEventListener('input', applyView));
+$('#pause').addEventListener('click', e => { state.paused = !state.paused; e.target.textContent = state.paused ? 'Play' : 'Pause'; });
+$('#step').addEventListener('click', () => { state.paused = true; $('#pause').textContent = 'Play'; state.t += 1 / 30; });
+$('#reset').addEventListener('click', () => { state.manual = {}; state.t = 0; if (state.anim === 'pose') for (const n in state.doll.joints) state.doll.joints[n].inp.value = 0; });
+$('#open').addEventListener('click', () => $('#file').click());
+$('#file').addEventListener('change', e => { const f = e.target.files[0]; if (f) f.text().then(t => loadSvg(t, f.name)); });
+addEventListener('keydown', e => {
+  if (e.target.tagName === 'INPUT' && e.target.type !== 'range') return;
+  if (e.key === ' ') { e.preventDefault(); $('#pause').click(); }
+  else if (e.key === '.') $('#step').click();
+  else if (e.key >= '1' && e.key <= '5') setAnim(ORDER[+e.key - 1]);
+});
+['dragenter', 'dragover'].forEach(t => addEventListener(t, e => { e.preventDefault(); $('#drop').style.display = 'flex'; }));
+['dragleave', 'drop'].forEach(t => addEventListener(t, e => { e.preventDefault(); $('#drop').style.display = 'none'; }));
+addEventListener('drop', e => { const f = e.dataTransfer.files[0]; if (f) f.text().then(t => loadSvg(t, f.name)); });
+addEventListener('resize', fit);
+
+/* ---------- boot: #sample=name&anim=walk&t=0.3&paused=1&pivots=1&tint=c4894f ---------- */
+const H = Object.fromEntries(new URLSearchParams(location.hash.slice(1)));
+setAnim(H.anim && ANIMS[H.anim] ? H.anim : 'walk');
+const first = H.sample && SAMPLES[H.sample] ? H.sample : Object.keys(SAMPLES)[0];
+if (first) loadSvg(SAMPLES[first], first); else $('#info').textContent = 'No samples embedded: drop an .svg onto the page.';
+if (H.t) state.t = +H.t;
+if (H.paused) { state.paused = true; $('#pause').textContent = 'Play'; }
+if (H.pivots) { $('#pivots').checked = true; applyView(); }
+if (H.tint) { $('#tint').value = '#' + H.tint; $('#tintOn').checked = true; applyView(); }
+if (H.flip) { $('#flip').checked = true; state.flip = true; applyView(); }
+requestAnimationFrame(tick);
+</script>
+</body>
+</html>

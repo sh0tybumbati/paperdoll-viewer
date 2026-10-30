@@ -1,0 +1,54 @@
+{
+ "pivots": {
+  "leg-l-u": {
+   "parent": "body",
+   "x": 20.6,
+   "y": 34.0
+  },
+  "leg-l-l": {
+   "parent": "leg-l-u",
+   "x": 20.6,
+   "y": 46.2
+  },
+  "arm-l-u": {
+   "parent": "body",
+   "x": 21.5,
+   "y": 20.4
+  },
+  "arm-l-l": {
+   "parent": "arm-l-u",
+   "x": 21.6,
+   "y": 27.8
+  },
+  "leg-r-u": {
+   "parent": "body",
+   "x": 20.6,
+   "y": 34.0
+  },
+  "leg-r-l": {
+   "parent": "leg-r-u",
+   "x": 20.6,
+   "y": 46.2
+  },
+  "arm-r-u": {
+   "parent": "body",
+   "x": 21.5,
+   "y": 20.4
+  },
+  "arm-r-l": {
+   "parent": "arm-r-u",
+   "x": 21.6,
+   "y": 27.8
+  },
+  "neck": {
+   "parent": "body",
+   "x": 21.0,
+   "y": 17.8
+  },
+  "head": {
+   "parent": "neck",
+   "x": 21.4,
+   "y": 13.9
+  }
+ }
+}
